@@ -14,7 +14,7 @@ class Pooling(nn.Module):
                                   stride=parameters['stride'],
                                   padding=parameters['padding'])
 
-    def forward(self, input_data):
+    def forward(self, input_data, feedforward_flag=True, recurrent_flag=True, topdown_flag=True, data_size=None):
         """This supports any of the combinations between feedforward, recurrent, top_down by turning on an off
         any of the flags for that pathway. It can even go in a backward direction if the feedforward flag is turned
         off and data_size is given. Input data should be a list of three inputs in full mode where feedforward input
