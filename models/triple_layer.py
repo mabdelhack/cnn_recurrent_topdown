@@ -51,16 +51,24 @@ class TripleLayerConv(nn.Module):
         the later inputs presence, any placeholder should be inserted in its place. Same goes for absence of recurrent
         input and presence of top-down."""
 
+        # print('feedforward = {}'.format(feedforward_flag))
+        # print('recurrent = {}'.format(recurrent_flag))
+        # print('topdown = {}'.format(topdown_flag))
+
         if feedforward_flag:
             x_feedforward = input_data[0]
         else:
             x_feedforward = torch.zeros(data_size)
+            if (recurrent_flag and input_data[1].is_cuda) or (topdown_flag and input_data[2].is_cuda):
+                x_feedforward = x_feedforward.cuda()
 
         if recurrent_flag:
             x_recurrent = input_data[1]
             x_recurrent = self.recurrent_activation(self.recurrent_layer(x_recurrent))
         else:
             x_recurrent = torch.zeros(x_feedforward.shape)
+            if (feedforward_flag and input_data[0].is_cuda) or (topdown_flag and input_data[2].is_cuda):
+                x_recurrent = x_recurrent.cuda()
 
         if topdown_flag:
             x_topdown = input_data[2]
@@ -69,7 +77,12 @@ class TripleLayerConv(nn.Module):
             x_topdown = self.topdown_activation(self.topdown_layer(x_topdown))
         else:
             x_topdown = torch.zeros(x_feedforward.shape)
+            if (feedforward_flag and input_data[0].is_cuda) or (recurrent_flag and input_data[1].is_cuda):
+                x_topdown = x_topdown.cuda()
 
+        # print('feedforward cuda = {}'.format(x_feedforward.is_cuda))
+        # print('recurrent cuda = {}'.format(x_recurrent.is_cuda))
+        # print('topdown cuda = {}'.format(x_topdown.is_cuda))
         x = x_feedforward + x_recurrent + x_topdown
 
         output = self.feedforward_activation(self.feedforward_layer(x))
@@ -113,6 +126,7 @@ class TripleLayerFc(nn.Module):
             'leaky_relu': nn.LeakyReLU(),
             'tanh': nn.Tanh(),
             'softmax': nn.Softmax(dim=1),
+            'none': nn.Identity()
         }
         self.feedforward_activation = activation_function[feedforward_recurrent_parameters['activation']]
         self.recurrent_activation = activation_function[feedforward_recurrent_parameters['activation']]
@@ -129,11 +143,16 @@ class TripleLayerFc(nn.Module):
         is the first element, recurrent is second and top-down is third. In case of absence of feedforward with any of
         the later inputs presence, any placeholder should be inserted in its place. Same goes for absence of recurrent
         input and presence of top-down."""
+        # print('feedforward = {}'.format(feedforward_flag))
+        # print('recurrent = {}'.format(recurrent_flag))
+        # print('topdown = {}'.format(topdown_flag))
 
         if feedforward_flag:
             x_feedforward = input_data[0]
         else:
             x_feedforward = torch.zeros(data_size)
+            if (recurrent_flag and input_data[1].is_cuda) or (topdown_flag and input_data[2].is_cuda):
+                x_feedforward = x_feedforward.cuda()
 
         if len(x_feedforward.shape) > 2:
             x_feedforward = x_feedforward.contiguous().view(-1, self.input_channels)
@@ -143,13 +162,20 @@ class TripleLayerFc(nn.Module):
             x_recurrent = self.recurrent_activation(self.recurrent_layer(x_recurrent))
         else:
             x_recurrent = torch.zeros(x_feedforward.shape)
+            if (feedforward_flag and input_data[0].is_cuda) or (topdown_flag and input_data[2].is_cuda):
+                x_recurrent = x_recurrent.cuda()
 
         if topdown_flag:
             x_topdown = input_data[2]
             x_topdown = self.topdown_activation(self.topdown_layer(x_topdown))
         else:
             x_topdown = torch.zeros(x_feedforward.shape)
+            if (feedforward_flag and input_data[0].is_cuda) or (recurrent_flag and input_data[1].is_cuda):
+                x_topdown = x_topdown.cuda()
 
+        # print('feedforward cuda = {}'.format(x_feedforward.is_cuda))
+        # print('recurrent cuda = {}'.format(x_recurrent.is_cuda))
+        # print('topdown cuda = {}'.format(x_topdown.is_cuda))
         x = x_feedforward + x_recurrent + x_topdown
 
         output = self.feedforward_activation(self.feedforward_layer(x))
