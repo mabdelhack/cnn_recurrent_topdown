@@ -195,17 +195,24 @@ output_size = [1000]
 module = MultiDirectional(input_size,
                           output_size,
                           bidirectional_alexnet_parameters,
-                          timeout=5,
+                          timeout=1,
                           recognition_threshold=0.5)
 
 x_ff = Variable(torch.randn(1, 3, 227, 227), requires_grad=True)
-x_ff.retain_grad()
+# x_ff.retain_grad()
 
 out, rec, topdwn = module(x_ff)
+from torchviz import make_dot
+make_dot(module(x_ff), params=dict(module.named_parameters()))
+
 
 loss_fn = CrossEntropyLossPlus()
 target = torch.zeros(1, dtype=torch.long)
 loss = loss_fn(out, rec, topdwn, target)
 loss.backward()
+out, rec, topdwn = module(x_ff)
+loss = loss_fn(out, rec, topdwn, target)
+loss.backward()
+
 
 print(x_ff.grad)
