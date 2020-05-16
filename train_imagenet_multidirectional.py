@@ -20,6 +20,7 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 from models.cnn_feedforward_recurrent_topdown import MultiDirectional
 from loss.crossentropy_plus import CrossEntropyLossPlus
+from torchsummary import summary
 
 
 # checks the models available
@@ -141,6 +142,8 @@ def main_worker(gpu, ngpus_per_node, args):
                              timeout=timeout,
                              recognition_threshold=recognition_threshold)
 
+    # for parameter in model.parameters():
+    #     print(parameter)
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
         # should always set the single device scope, otherwise,
@@ -172,15 +175,19 @@ def main_worker(gpu, ngpus_per_node, args):
     lambda_recognition = 1.0
     lambda_recurrent = 0.0
     lambda_topdown = 0.0
+    flags = dict()
+    flags['recurrent'] = recurrent_flag
+    flags['topdown'] = topdown_flag
 
     criterion = CrossEntropyLossPlus(recurrent_flag=recurrent_flag, topdown_flag=topdown_flag,
                                      lambda_recognition=lambda_recognition, lambda_recurrent=lambda_recurrent,
-                                     lambda_topdown=lambda_topdown).cuda(args.gpu)
+                                     lambda_topdown=lambda_topdown)
+    criterion.cuda(args.gpu)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
-
+    # summary(model, (3, 227, 227))
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
@@ -240,7 +247,7 @@ def main_worker(gpu, ngpus_per_node, args):
         num_workers=args.workers, pin_memory=True)
 
     if args.evaluate:
-        validate(val_loader, model, criterion, args)
+        validate(val_loader, model, criterion, args, flags)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
@@ -248,15 +255,13 @@ def main_worker(gpu, ngpus_per_node, args):
             train_sampler.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, args)
 
-        flags = dict()
-        flags['recurrent'] = recurrent_flag
-        flags['topdown'] = topdown_flag
+
 
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch, args, flags)
 
         # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, args)
+        acc1 = validate(val_loader, model, criterion, args, flags)
 
         # remember best acc@1 and save checkpoint
         is_best = acc1 > best_acc1
@@ -266,7 +271,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 and args.rank % ngpus_per_node == 0):
             save_checkpoint({
                 'epoch': epoch + 1,
-                'arch': args.arch,
+                'arch': 'triple_layer',
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
@@ -289,6 +294,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args, flags):
 
     end = time.time()
     for i, (images, target) in enumerate(train_loader):
+        # print(i)
         # measure data loading time
         data_time.update(time.time() - end)
 
@@ -300,7 +306,9 @@ def train(train_loader, model, criterion, optimizer, epoch, args, flags):
         recognition_output, recurrent_output, topdown_output = model(images,
                                                                      recurrent_flag=flags['recurrent'],
                                                                      topdown_flag=flags['topdown'])
+
         loss = criterion(recognition_output, recurrent_output, topdown_output, target)
+        # print(loss)
 
         # measure accuracy and record loss
         acc1, acc5 = accuracy(recognition_output, target, topk=(1, 5))
@@ -310,7 +318,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args, flags):
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
+        loss.backward(retain_graph=False)
         optimizer.step()
 
         # measure elapsed time
@@ -321,7 +329,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args, flags):
             progress.display(i)
 
 
-def validate(val_loader, model, criterion, args):
+def validate(val_loader, model, criterion, args, flags):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -342,11 +350,13 @@ def validate(val_loader, model, criterion, args):
             target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
-            recognition_output, recurrent_output, topdown_output = model(images)
+            recognition_output, recurrent_output, topdown_output = model(images,
+                                                                         recurrent_flag=flags['recurrent'],
+                                                                         topdown_flag=flags['topdown'])
             loss = criterion(recognition_output, recurrent_output, topdown_output, target)
 
             # measure accuracy and record loss
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            acc1, acc5 = accuracy(recognition_output, target, topk=(1, 5))
             losses.update(loss.item(), images.size(0))
             top1.update(acc1[0], images.size(0))
             top5.update(acc5[0], images.size(0))
@@ -612,7 +622,7 @@ def model_parameters():
     layer['input_size'] = [4096]
     layer['dropout'] = None
     ff_rc_params = dict()
-    ff_rc_params['activation'] = 'softmax'
+    ff_rc_params['activation'] = 'none'
     layer['feedforward_recurrent_parameters'] = ff_rc_params
     td_params = dict()
     td_params['activation'] = 'relu'
